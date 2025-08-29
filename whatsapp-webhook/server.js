@@ -3,8 +3,8 @@ import "dotenv/config.js";
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
-import { appendRow, ensureHeaders } from "./sheets.js";
-import { sendText, sendTemplate } from "./whatsapp.js";
+import { appendRow, ensureHeaders } from "./src/sheets.js";
+import { sendText, sendTemplate } from "./src/whatsapp.js";
 
 const app = express();
 app.use(cors());
