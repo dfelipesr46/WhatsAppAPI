@@ -5,8 +5,10 @@ import cors from "cors";
 import morgan from "morgan";
 import { appendRow, ensureHeaders } from "./src/sheets.js";
 import { sendText, sendTemplate } from "./src/whatsapp.js";
+import path from "path";
 
 const app = express();
+const __dirname = path.resolve();
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 app.use(morgan("tiny"));
@@ -42,6 +44,18 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "verify_token_demo";
     console.warn("⚠️ No se pudo preparar Sheets (se intentará al recibir eventos):", e.message);
   }
 })();
+
+// servir archivos estáticos desde /static
+app.use("/static", express.static(path.join(__dirname, "public"), {
+  maxAge: "1d",             // cache (opcional)
+  setHeaders: (res, path) => {
+    // forzar content-type correcto si hace falta
+    if (path.endsWith(".mp4")) res.setHeader("Content-Type", "video/mp4");
+  }
+}));
+
+app.use(express.json({ limit: "2mb" })); // cuidado con body limit para requests
+// ... tus middlewares y rutas existentes ...
 
 // Salud
 app.get("/healthz", (_, res) => res.status(200).send("ok"));
