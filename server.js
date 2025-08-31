@@ -6,6 +6,7 @@ import morgan from "morgan";
 import { appendRow, ensureHeaders } from "./src/sheets.js";
 import { sendText, sendTemplate } from "./src/whatsapp.js";
 import path from "path";
+import { updateRowByMessageId } from "./sheets.js";
 
 const app = express();
 const __dirname = path.resolve();
@@ -155,6 +156,20 @@ app.post("/webhook", async (req, res) => {
               JSON.stringify(st)
             ]);
 
+
+            // 2. Actualizar también en Sheets B (Envíos Masivos)
+            await updateRowByMessageId("Hoja1", messageId, (row) => {
+              if (status === "delivered") {
+                row["Estado Entrega"] = "Entregado";
+                row["Hora Entrega"] = ts;
+              }
+              if (status === "read") {
+                row["Estado Lectura"] = "Leído";
+                row["Hora Lectura"] = ts;
+              }
+              return row;
+            });
+
             console.log(`🗂️ Status ${status} para ${from} (msg ${messageId})`);
           }
         }
@@ -165,6 +180,9 @@ app.post("/webhook", async (req, res) => {
     console.error("❌ Error procesando webhook:", err.message);
   }
 });
+
+
+
 
 // Endpoint opcional para responder manualmente (texto libre dentro de 24h)
 app.post("/send-text", async (req, res) => {
@@ -194,4 +212,50 @@ app.post("/send-template", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`🚀 Server escuchando en :${PORT}`);
+});
+
+
+// Endpoint para webhooks de envíos masivos (separado para evitar conflictos)
+app.post("/webhook-envios", async (req, res) => {
+  try {
+    const payload = req.body;
+    res.sendStatus(200);
+
+    if (payload.object !== "whatsapp_business_account") return;
+
+    for (const entry of payload.entry || []) {
+      for (const change of entry.changes || []) {
+        const value = change.value || {};
+
+        if (value.statuses) {
+          for (const st of value.statuses) {
+            const status = st.status; // sent, delivered, read, failed
+            const messageId = st.id;
+            const ts = new Date(
+              st.timestamp * 1000
+            ).toLocaleString("es-CO", { timeZone: "America/Bogota", hour12: false });
+
+            if (status === "delivered") {
+              await updateRowByMessageId(messageId, {
+                "Estado Entrega": "Entregado",
+                "Hora Entrega": ts,
+              });
+            } else if (status === "read") {
+              await updateRowByMessageId(messageId, {
+                "Estado Lectura": "Leído",
+                "Hora Lectura": ts,
+              });
+            } else if (status === "failed") {
+              await updateRowByMessageId(messageId, {
+                "Estado Entrega": "Fallido",
+                "Hora Entrega": ts,
+              });
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("❌ Error procesando webhook-envios:", err.message);
+  }
 });

@@ -1,4 +1,3 @@
-// sheets.js
 import { google } from "googleapis";
 
 function loadServiceAccount() {
@@ -28,10 +27,13 @@ function getAuth() {
   );
 }
 
-export async function appendRow(sheetName, values) {
+function getSheets() {
   const auth = getAuth();
-  const sheets = google.sheets({ version: "v4", auth });
+  return google.sheets({ version: "v4", auth });
+}
 
+export async function appendRow(sheetName, values) {
+  const sheets = getSheets();
   const spreadsheetId = process.env.SPREADSHEET_ID;
   if (!spreadsheetId) throw new Error("Falta SPREADSHEET_ID en variables de entorno.");
 
@@ -47,11 +49,9 @@ export async function appendRow(sheetName, values) {
 }
 
 export async function ensureHeaders(sheetName, headers) {
-  const auth = getAuth();
-  const sheets = google.sheets({ version: "v4", auth });
+  const sheets = getSheets();
   const spreadsheetId = process.env.SPREADSHEET_ID;
 
-  // Lee la primera fila
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
     range: `${sheetName}!A1:Z1`,
@@ -59,7 +59,6 @@ export async function ensureHeaders(sheetName, headers) {
 
   const row = res.data.values?.[0] || [];
   if (row.length === 0) {
-    // Escribe headers
     await sheets.spreadsheets.values.update({
       spreadsheetId,
       range: `${sheetName}!A1:${String.fromCharCode(64 + headers.length)}1`,
@@ -67,4 +66,77 @@ export async function ensureHeaders(sheetName, headers) {
       requestBody: { values: [headers] },
     });
   }
+}
+
+/**
+ * Actualiza una fila en la hoja por `messageId`.
+ * @param {string} sheetName - Nombre de la hoja (ej. "Hoja1")
+ * @param {string} messageId - ID del mensaje de WhatsApp
+ * @param {function} updateFn - Función que recibe un objeto {columna: valor} y devuelve el actualizado
+ */
+export async function updateRowByMessageId(sheetName, messageId, updateFn) {
+  const sheets = getSheets();
+  const spreadsheetId = process.env.SPREADSHEET_ENVIOS_MASIVOS_ID; // usamos el ID del envío masivo
+
+  if (!spreadsheetId) {
+    throw new Error("Falta SPREADSHEET_ENVIOS_MASIVOS_ID en variables de entorno.");
+  }
+
+  // 1. Leer todas las filas
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${sheetName}`,
+  });
+
+  const rows = res.data.values;
+  if (!rows || rows.length === 0) return;
+
+  // 2. Buscar cabeceras
+  const headers = rows[0];
+  const messageIdIndex = headers.indexOf("ID Mensaje");
+  if (messageIdIndex === -1) {
+    throw new Error("No se encontró la columna 'ID Mensaje'");
+  }
+
+  // 3. Localizar fila
+  let rowIndex = -1;
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][messageIdIndex] === messageId) {
+      rowIndex = i;
+      break;
+    }
+  }
+
+  if (rowIndex === -1) {
+    console.log(`⚠️ No se encontró el messageId ${messageId}`);
+    return;
+  }
+
+  // 4. Crear objeto clave-valor
+  const rowData = {};
+  headers.forEach((h, idx) => {
+    rowData[h] = rows[rowIndex][idx] || "";
+  });
+
+  // 5. Aplicar cambios
+  const updatedRow = updateFn({ ...rowData });
+
+  // 6. Reconstruir valores
+  const newValues = headers.map((h) => updatedRow[h] || "");
+
+  // 7. Actualizar en Sheets
+  const range = `${sheetName}!A${rowIndex + 1}:${String.fromCharCode(
+    65 + headers.length - 1
+  )}${rowIndex + 1}`;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range,
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [newValues],
+    },
+  });
+
+  console.log(`✅ Fila actualizada en ${sheetName} (row ${rowIndex + 1})`);
 }
