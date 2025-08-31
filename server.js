@@ -218,14 +218,21 @@ app.listen(PORT, () => {
 // Endpoint para webhooks de envíos masivos (separado para evitar conflictos)
 app.post("/webhook-envios", async (req, res) => {
   try {
+    console.log("📩 Webhook recibido:", JSON.stringify(req.body, null, 2));
     const payload = req.body;
     res.sendStatus(200);
 
-    if (payload.object !== "whatsapp_business_account") return;
+    if (payload.object !== "whatsapp_business_account") {
+      console.log("⚠️ No es un evento de WhatsApp Business, se ignora.");
+      return;
+    }
 
     for (const entry of payload.entry || []) {
+      console.log("➡️ Procesando entry:", entry.id);
+
       for (const change of entry.changes || []) {
         const value = change.value || {};
+        console.log("🔍 Cambio detectado:", value);
 
         if (value.statuses) {
           for (const st of value.statuses) {
@@ -233,29 +240,41 @@ app.post("/webhook-envios", async (req, res) => {
             const messageId = st.id;
             const ts = new Date(
               st.timestamp * 1000
-            ).toLocaleString("es-CO", { timeZone: "America/Bogota", hour12: false });
+            ).toLocaleString("es-CO", {
+              timeZone: "America/Bogota",
+              hour12: false,
+            });
 
-            if (status === "delivered") {
-              await updateRowByMessageId(messageId, {
-                "Estado Entrega": "Entregado",
-                "Hora Entrega": ts,
-              });
-            } else if (status === "read") {
-              await updateRowByMessageId(messageId, {
-                "Estado Lectura": "Leído",
-                "Hora Lectura": ts,
-              });
-            } else if (status === "failed") {
-              await updateRowByMessageId(messageId, {
-                "Estado Entrega": "Fallido",
-                "Hora Entrega": ts,
-              });
+            console.log(`📌 Mensaje ${messageId} con estado: ${status} a las ${ts}`);
+
+            try {
+              if (status === "delivered") {
+                await updateRowByMessageId("Hoja1", messageId, (row) => ({
+                  ...row,
+                  "Estado Entrega": "Entregado",
+                  "Hora Entrega": ts,
+                }));
+              } else if (status === "read") {
+                await updateRowByMessageId("Hoja1", messageId, (row) => ({
+                  ...row,
+                  "Estado Lectura": "Leído",
+                  "Hora Lectura": ts,
+                }));
+              } else if (status === "failed") {
+                await updateRowByMessageId("Hoja1", messageId, (row) => ({
+                  ...row,
+                  "Estado Entrega": "Fallido",
+                  "Hora Entrega": ts,
+                }));
+              }
+            } catch (err) {
+              console.error(`❌ Error actualizando Sheets para ${messageId}:`, err.message);
             }
           }
         }
       }
     }
   } catch (err) {
-    console.error("❌ Error procesando webhook-envios:", err.message);
+    console.error("❌ Error procesando webhook-envios:", err.message, err.stack);
   }
 });

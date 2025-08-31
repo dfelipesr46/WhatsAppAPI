@@ -3,6 +3,7 @@ import { google } from "googleapis";
 function loadServiceAccount() {
   const b64 = process.env.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64;
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  
 
   let creds;
   if (b64 && b64.trim() !== "") {
@@ -74,69 +75,85 @@ export async function ensureHeaders(sheetName, headers) {
  * @param {string} messageId - ID del mensaje de WhatsApp
  * @param {function} updateFn - Función que recibe un objeto {columna: valor} y devuelve el actualizado
  */
-export async function updateRowByMessageId(sheetName, messageId, updateFn) {
-  const sheets = getSheets();
-  const spreadsheetId = process.env.SPREADSHEET_ENVIOS_MASIVOS_ID; // usamos el ID del envío masivo
 
-  if (!spreadsheetId) {
-    throw new Error("Falta SPREADSHEET_ENVIOS_MASIVOS_ID en variables de entorno.");
-  }
+export async function updateRowByMessageId(messageId, updates) {
+  try {
+    console.log(`🔍 Buscando fila con ID Mensaje = ${messageId}`);
+    const sheets = getSheets();
+    const spreadsheetId = process.env.SPREADSHEET_ENVIOS_MASIVOS_ID;
 
-  // 1. Leer todas las filas
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: `${sheetName}`,
-  });
-
-  const rows = res.data.values;
-  if (!rows || rows.length === 0) return;
-
-  // 2. Buscar cabeceras
-  const headers = rows[0];
-  const messageIdIndex = headers.indexOf("ID Mensaje");
-  if (messageIdIndex === -1) {
-    throw new Error("No se encontró la columna 'ID Mensaje'");
-  }
-
-  // 3. Localizar fila
-  let rowIndex = -1;
-  for (let i = 1; i < rows.length; i++) {
-    if (rows[i][messageIdIndex] === messageId) {
-      rowIndex = i;
-      break;
+    if (!spreadsheetId) {
+      throw new Error("❌ Falta SPREADSHEET_ENVIOS_MASIVOS_ID en variables de entorno.");
     }
+
+    const sheetName = "Hoja1"; // fijo según tu estructura
+
+    // 1. Leer todas las filas
+    console.log(`📥 Leyendo datos de ${sheetName}...`);
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}`,
+    });
+
+    const rows = res.data.values;
+    if (!rows || rows.length === 0) {
+      console.log("⚠️ La hoja está vacía.");
+      return;
+    }
+
+    // 2. Buscar cabeceras
+    const headers = rows[0];
+    const messageIdIndex = headers.indexOf("ID Mensaje");
+    if (messageIdIndex === -1) {
+      throw new Error("❌ No se encontró la columna 'ID Mensaje'");
+    }
+
+    // 3. Localizar fila
+    let rowIndex = -1;
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i][messageIdIndex] === messageId) {
+        rowIndex = i;
+        break;
+      }
+    }
+
+    if (rowIndex === -1) {
+      console.log(`⚠️ No se encontró el messageId ${messageId} en la hoja.`);
+      return;
+    }
+
+    console.log(`✅ Fila encontrada en la fila ${rowIndex + 1}`);
+
+    // 4. Crear objeto clave-valor
+    const rowData = {};
+    headers.forEach((h, idx) => {
+      rowData[h] = rows[rowIndex][idx] || "";
+    });
+
+    // 5. Aplicar cambios
+    const updatedRow = { ...rowData, ...updates };
+
+    // 6. Reconstruir valores
+    const newValues = headers.map((h) => updatedRow[h] || "");
+
+    // 7. Actualizar en Sheets
+    const range = `${sheetName}!A${rowIndex + 1}:${String.fromCharCode(
+      65 + headers.length - 1
+    )}${rowIndex + 1}`;
+
+    console.log(`✍️ Actualizando fila ${rowIndex + 1} con:`, updates);
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [newValues],
+      },
+    });
+
+    console.log(`✅ Fila actualizada en ${sheetName} (row ${rowIndex + 1})`);
+  } catch (err) {
+    console.error("❌ Error en updateRowByMessageId:", err.message);
   }
-
-  if (rowIndex === -1) {
-    console.log(`⚠️ No se encontró el messageId ${messageId}`);
-    return;
-  }
-
-  // 4. Crear objeto clave-valor
-  const rowData = {};
-  headers.forEach((h, idx) => {
-    rowData[h] = rows[rowIndex][idx] || "";
-  });
-
-  // 5. Aplicar cambios
-  const updatedRow = updateFn({ ...rowData });
-
-  // 6. Reconstruir valores
-  const newValues = headers.map((h) => updatedRow[h] || "");
-
-  // 7. Actualizar en Sheets
-  const range = `${sheetName}!A${rowIndex + 1}:${String.fromCharCode(
-    65 + headers.length - 1
-  )}${rowIndex + 1}`;
-
-  await sheets.spreadsheets.values.update({
-    spreadsheetId,
-    range,
-    valueInputOption: "USER_ENTERED",
-    requestBody: {
-      values: [newValues],
-    },
-  });
-
-  console.log(`✅ Fila actualizada en ${sheetName} (row ${rowIndex + 1})`);
 }
