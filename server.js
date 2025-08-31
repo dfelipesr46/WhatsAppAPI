@@ -6,7 +6,7 @@ import morgan from "morgan";
 import { appendRow, ensureHeaders } from "./src/sheets.js";
 import { sendText, sendTemplate } from "./src/whatsapp.js";
 import path from "path";
-import { updateRowByMessageId } from "./sheets.js";
+import { updateRowByMessageId } from "./src/sheets.js";
 
 const app = express();
 const __dirname = path.resolve();
