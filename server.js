@@ -194,7 +194,7 @@ app.post("/webhook", async (req, res) => {
 
 
 
-// Endpoint opcional para responder manualmente (texto libre dentro de 24h)
+// Endpoint para responder manualmente (texto libre dentro de 24h)
 app.post("/send-text", async (req, res) => {
   try {
     const { to, body } = req.body;
@@ -207,7 +207,7 @@ app.post("/send-text", async (req, res) => {
   }
 });
 
-// Endpoint opcional para enviar una plantilla
+// Endpoint para enviar una plantilla
 app.post("/send-template", async (req, res) => {
   try {
     const { to, name, languageCode = "es_CO", components } = req.body;
@@ -225,6 +225,7 @@ app.listen(PORT, () => {
 });
 
 
+// Endpoint para webhooks de envíos masivos (separado para evitar conflictos)
 // Endpoint para webhooks de envíos masivos (separado para evitar conflictos)
 app.post("/webhook-envios", async (req, res) => {
   try {
@@ -248,9 +249,7 @@ app.post("/webhook-envios", async (req, res) => {
           for (const st of value.statuses) {
             const status = st.status; // sent, delivered, read, failed
             const messageId = st.id;
-            const ts = new Date(
-              st.timestamp * 1000
-            ).toLocaleString("es-CO", {
+            const ts = new Date(st.timestamp * 1000).toLocaleString("es-CO", {
               timeZone: "America/Bogota",
               hour12: false,
             });
@@ -259,23 +258,24 @@ app.post("/webhook-envios", async (req, res) => {
 
             try {
               if (status === "delivered") {
-                await updateRowByMessageId("Hoja1", messageId, (row) => ({
-                  ...row,
+                await updateRowByMessageId(messageId, {
                   "Estado Entrega": "Entregado",
                   "Hora Entrega": ts,
-                }));
+                  "Última Actualización": ts,
+                });
               } else if (status === "read") {
-                await updateRowByMessageId("Hoja1", messageId, (row) => ({
-                  ...row,
+                await updateRowByMessageId(messageId, {
                   "Estado Lectura": "Leído",
                   "Hora Lectura": ts,
-                }));
+                  "Última Actualización": ts,
+                });
               } else if (status === "failed") {
-                await updateRowByMessageId("Hoja1", messageId, (row) => ({
-                  ...row,
+                await updateRowByMessageId(messageId, {
                   "Estado Entrega": "Fallido",
                   "Hora Entrega": ts,
-                }));
+                  "Última Actualización": ts,
+                  "Detalle Error": st.errors?.[0]?.title || st.errors?.[0]?.message || "",
+                });
               }
             } catch (err) {
               console.error(`❌ Error actualizando Sheets para ${messageId}:`, err.message);
