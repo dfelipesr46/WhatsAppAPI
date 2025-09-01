@@ -157,18 +157,28 @@ app.post("/webhook", async (req, res) => {
             ]);
 
 
-            // 2. Actualizar también en Sheets B (Envíos Masivos)
-            await updateRowByMessageId("Hoja1", messageId, (row) => {
-              if (status === "delivered") {
-                row["Estado Entrega"] = "Entregado";
-                row["Hora Entrega"] = ts;
-              }
-              if (status === "read") {
-                row["Estado Lectura"] = "Leído";
-                row["Hora Lectura"] = ts;
-              }
-              return row;
-            });
+            // 2. Actualizar también en Sheets B (Envíos Masivos) — usando la firma correcta
+            if (status === "delivered") {
+              await updateRowByMessageId(messageId, {
+                "Estado Entrega": "Entregado",
+                "Hora Entrega": ts,
+                "Última Actualización": ts
+              });
+            } else if (status === "read") {
+              await updateRowByMessageId(messageId, {
+                "Estado Lectura": "Leído",
+                "Hora Lectura": ts,
+                "Última Actualización": ts
+              });
+            } else if (status === "failed") {
+              await updateRowByMessageId(messageId, {
+                "Estado Entrega": "Fallido",
+                "Hora Entrega": ts,
+                "Última Actualización": ts,
+                "Detalle Error": value.statuses?.[0]?.errors?.[0]?.title || value.statuses?.[0]?.errors?.[0]?.message || ""
+              });
+            }
+
 
             console.log(`🗂️ Status ${status} para ${from} (msg ${messageId})`);
           }
